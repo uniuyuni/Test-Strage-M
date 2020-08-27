@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		3519792724F5DC2C004EE35E /* SeededGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3519792624F5DC2C004EE35E /* SeededGenerator.swift */; };
+		35581A9124F73CF200596679 /* USBDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35581A9024F73CF200596679 /* USBDetector.swift */; };
 		35753CCA24F47D08003035A9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35753CC924F47D08003035A9 /* AppDelegate.swift */; };
 		35753CCC24F47D08003035A9 /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35753CCB24F47D08003035A9 /* ViewController.swift */; };
 		35753CCE24F47D0B003035A9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 35753CCD24F47D0B003035A9 /* Assets.xcassets */; };
@@ -14,6 +16,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		3519792624F5DC2C004EE35E /* SeededGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeededGenerator.swift; sourceTree = "<group>"; };
+		35581A9024F73CF200596679 /* USBDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBDetector.swift; sourceTree = "<group>"; };
 		35753CC624F47D08003035A9 /* Test Strage M.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Test Strage M.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		35753CC924F47D08003035A9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		35753CCB24F47D08003035A9 /* ViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewController.swift; sourceTree = "<group>"; };
@@ -55,8 +59,10 @@
 			children = (
 				35753CC924F47D08003035A9 /* AppDelegate.swift */,
 				35753CCB24F47D08003035A9 /* ViewController.swift */,
+				3519792624F5DC2C004EE35E /* SeededGenerator.swift */,
 				35753CCD24F47D0B003035A9 /* Assets.xcassets */,
 				35753CCF24F47D0B003035A9 /* Main.storyboard */,
+				35581A9024F73CF200596679 /* USBDetector.swift */,
 				35753CD224F47D0B003035A9 /* Info.plist */,
 				35753CD324F47D0B003035A9 /* Test_Strage_M.entitlements */,
 			);
@@ -133,6 +139,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				35581A9124F73CF200596679 /* USBDetector.swift in Sources */,
+				3519792724F5DC2C004EE35E /* SeededGenerator.swift in Sources */,
 				35753CCC24F47D08003035A9 /* ViewController.swift in Sources */,
 				35753CCA24F47D08003035A9 /* AppDelegate.swift in Sources */,
 			);
