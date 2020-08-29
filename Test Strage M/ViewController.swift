@@ -10,13 +10,18 @@ import Cocoa
 
 class ViewController: NSViewController, USBDetectorDelegate {
 
-    @IBOutlet var logView: NSTextView!
-    @IBOutlet weak var actionButton: NSButton!
     @IBOutlet weak var volumeList: NSPopUpButton!
+    @IBOutlet weak var refreshButton: NSButton!
+    @IBOutlet weak var actionButton: NSButton!
     @IBOutlet weak var indicator: NSLevelIndicator!
+    @IBOutlet weak var logView: NSTextView!
+    @IBOutlet weak var dontDeleteFilesCheck: NSButton!
+    @IBOutlet weak var deleteButton: NSButton!
+    @IBOutlet weak var stateText: NSTextField!
     
     typealias StatFS = statfs // this does the trick
-    
+
+    // マウントされているボリュームの情報
     class Volume {
         
         init() {
@@ -59,9 +64,8 @@ class ViewController: NSViewController, USBDetectorDelegate {
     
     var logText: String = ""        // ログテキスト
     var volumeArray: Array<Volume> = Array()    // ストレージの情報配列
-    var fileCount: Int = -1         // ファイルカウント
     var isInterrupt: Bool = false   // 強制終了フラグ
-    var indicatorSub: Double = 0.0  // インジケーター最大数
+    var indicatorSub: Double = 0.0  // インジケーター逆カウンタ
     let detector = USBDetector()    // USBデバイス検知
     
     override func viewDidLoad() {
@@ -80,12 +84,30 @@ class ViewController: NSViewController, USBDetectorDelegate {
         }
     }
     
-    @IBOutlet weak var refreshButton: NSButton!
     
     @IBAction func onRefresh(_ sender: Any) {
         refreshVolumeList()
     }
     
+    @IBAction func onDeleteFiles(_ sender: Any) {
+        
+        // 選択されたボリューム
+        let selectedIndex = volumeList.indexOfSelectedItem
+        
+        // 存在するファイルの数を数える
+        var fileCount: Int = 0
+        repeat {
+            ramdomGenerator = SeededGenerator(seed: UInt64(fileCount))
+            let fileName = makeFilenameFromCount(volume: volumeArray[selectedIndex], count: fileCount)
+            if FileManager.default.fileExists(atPath: fileName) == false {
+                break
+            }
+            fileCount += 1
+        } while( true )
+
+        // 見つけたファイルだけ削除
+        deleteFileAll(self.volumeArray[selectedIndex], fileCount: fileCount)
+    }
     
     func deviceAdded(_ device: io_object_t) {
     }
@@ -100,19 +122,27 @@ class ViewController: NSViewController, USBDetectorDelegate {
     
     @IBAction func onButtonAction(_ sender: Any) {
         
-        if self.fileCount < 0 {
+        // ファイルカウンタがマイナスなら最初から
+        if self.isInterrupt == false {
+            
+            // 選択されたボリューム
             let selectedIndex = volumeList.indexOfSelectedItem
+
+            startProcessForView(selectedIndex)
             
             dispatchGroup.enter()
             dispatchQueue.async {
-                self.startProcessForView(selectedIndex)
                 
-                self.writeFileAll(self.volumeArray[selectedIndex])
+                let fileCount: Int = self.writeFileAll(self.volumeArray[selectedIndex])
                 if( self.isInterrupt != true ) {
-                    self.verifyFileAll(self.volumeArray[selectedIndex])
+                    self.verifyFileAll(self.volumeArray[selectedIndex], fileCount: fileCount)
                 }
-                self.deleteFileAll(self.volumeArray[selectedIndex])
-                self.fileCount = -1
+                if self.dontDeleteFilesCheck.state == NSControl.StateValue.off {
+                    self.deleteFileAll(self.volumeArray[selectedIndex], fileCount: fileCount)
+                } else {
+                    self.inclimentIndicatorValue()
+                }
+                self.finishIndicatorValue()
                 self.isInterrupt = false
  
                 self.dispatchGroup.leave()
@@ -122,8 +152,9 @@ class ViewController: NSViewController, USBDetectorDelegate {
             dispatchGroup.notify(queue: .main) {
                 self.finishProcessForView()
             }
-            
-        } else if self.isInterrupt == false {
+
+        // 中断
+        } else {
             isInterrupt = true
             actionButton.isEnabled = false
             addLog("stop testing...")
@@ -134,8 +165,9 @@ class ViewController: NSViewController, USBDetectorDelegate {
         DispatchQueue.main.async {
             self.volumeList.isEnabled = false
             self.actionButton.title = "Stop"
+            self.deleteButton.isEnabled = false
             self.indicator.floatValue = 0.0
-            self.indicatorSub = Double(self.volumeArray[selectedIndex].freeBlock / (UInt64(self.MAX_FILE_SIZE)/self.volumeArray[selectedIndex].blockSize) * 2+1)
+            self.indicatorSub = ceil(Double(self.volumeArray[selectedIndex].freeBlock) / Double(UInt64(self.MAX_FILE_SIZE)/self.volumeArray[selectedIndex].blockSize)) * 2+1
             self.indicator.maxValue = self.indicatorSub
         }
     }
@@ -145,6 +177,13 @@ class ViewController: NSViewController, USBDetectorDelegate {
             self.volumeList.isEnabled = true
             self.actionButton.isEnabled = true
             self.actionButton.title = "Start"
+            self.deleteButton.isEnabled = true
+        }
+    }
+    
+    func setStateText(process: String, totalSize: Int, time: TimeInterval, count: Int) {
+        DispatchQueue.main.async {
+            self.stateText.stringValue = process + ": " + "\(toStringCanmaFormat(totalSize)) Byte, " + "\(round(time*10)/10) MB/s"
         }
     }
     
@@ -154,7 +193,13 @@ class ViewController: NSViewController, USBDetectorDelegate {
             self.indicator.doubleValue = self.indicator.maxValue-self.indicatorSub
         }
     }
-    
+    func finishIndicatorValue() {
+        DispatchQueue.main.async {
+            self.indicatorSub = 0
+            self.indicator.doubleValue = self.indicator.maxValue
+        }
+    }
+
     func addLog(_ text: String) {
         DispatchQueue.main.async {
             self.logText += text + "\n"
@@ -166,20 +211,6 @@ class ViewController: NSViewController, USBDetectorDelegate {
         logText = ""
         logView.string = logText
     }
-    
-    func removeOptionalString(_ str: String) -> String {
-        var temp = str
-        
-        if let range = temp.range(of: "Optional(\"") {
-            temp.removeSubrange(range)
-        }
-        if let range = temp.range(of: "\")") {
-            temp.removeSubrange(range)
-        }
-        
-        return temp
-    }
-
     
     func addVolume(_ url: URL) -> Volume {
         var volume = Volume()
@@ -246,17 +277,17 @@ class ViewController: NSViewController, USBDetectorDelegate {
  */
     }
     
-    var ramdomGenerator = SeededGenerator()         // シード指定可のランダムジェネレータ
+    var ramdomGenerator = SeededGenerator()    // シード指定可のランダムジェネレータ
     let MAX_FILE_SIZE = 2*1024*1024*1024/16    // 作成ファイルの最大サイズ
     
     // 乱数を使用してテンポラリのファイル名をフルパスで作成する
-    func makeFilenameFromRandom(volume: Volume) -> String {
-        var fileName = volume.path
+    func makeFilenameFromCount(volume: Volume, count: Int) -> String {
+        var fileName: String = volume.path
             
         if fileName.hasSuffix("/") == false {
             fileName += "/"
         }
-        fileName += String(UInt32.random(in: UInt32.min..<UInt32.max, using: &ramdomGenerator)|0xF0000000, radix: 16)
+        fileName += String(format: "%08X", count)
         fileName += ".tsm"
 
         return fileName
@@ -289,11 +320,24 @@ class ViewController: NSViewController, USBDetectorDelegate {
         return Data(bytes: &writeArray, count: writeArray.count*MemoryLayout<UInt64>.size)
     }
     
+    func deleteExistsFile(_ fileName: String) -> Bool {
+        if FileManager.default.fileExists(atPath: fileName) {
+            do {
+                try FileManager.default.removeItem(atPath: fileName)
+                
+            } catch {
+                 return false
+            }
+
+        }
+        return true
+    }
+    
     func writeFile(_ volume: Volume, count: Int) -> (time: TimeInterval, writeSize: Int) {
         ramdomGenerator = SeededGenerator(seed: UInt64(count))
         
         // ファイル名を先に作る
-        let fileName = makeFilenameFromRandom(volume: volume)
+        let fileName = makeFilenameFromCount(volume: volume, count: count)
 
         // make file size
         let fileSize = calcMaxFileSize(volume: volume)
@@ -305,32 +349,34 @@ class ViewController: NSViewController, USBDetectorDelegate {
         let rnd = UInt64.random(in: UInt64.min...UInt64.max, using: &ramdomGenerator)
         let writeData = createWriteData(initData: rnd, size: fileSize)
 
-        // ファイルがあったら削除
+        // ファイルがあったらスキップ
         if FileManager.default.fileExists(atPath: fileName) {
-            do {
-                try FileManager.default.removeItem(atPath: fileName)
-                
-            } catch {
-                addLog("can't delete exists file (" + fileName + ")")
-                return (0.0, 0)
-            }
-
+            return (Double(fileSize)/1000.0/1000.0, fileSize)
         }
-        
+/*
+        // ファイルがあったら削除
+        if deleteExistsFile(fileName) == false {
+            addLog("can't delete exists file (" + fileName + ")")
+            return (0.0, 0)
+        }
+ */
         // get start time
         let startDate = Date()
         
         // create & write file
         let result = FileManager.default.createFile(atPath: fileName, contents: nil, attributes: nil)
         if result == true {
-            let fh = FileHandle(forWritingAtPath: fileName)
-            if fh != nil {
-                fh?.write(writeData)
-                fh?.closeFile()
-                
-                let dt = Date().timeIntervalSince(startDate)
-                return (Double(fileSize)/dt/1000.0/1000.0, fileSize)
+            do {
+                let url = URL(fileURLWithPath: fileName)
+                try writeData.write(to: url)
+            } catch {
+                addLog("write file error! \(fileName)")
+                deleteExistsFile(fileName)
+                return (0.0, 0)
             }
+            let dt = Date().timeIntervalSince(startDate)
+            return (Double(fileSize)/dt/1000.0/1000.0, fileSize)
+
         } else {
             addLog("can't create file: \(fileName)")
         }
@@ -338,12 +384,12 @@ class ViewController: NSViewController, USBDetectorDelegate {
         return (0.0, 0)
     }
     
-    func writeFileAll(_ volume: Volume) {
+    func writeFileAll(_ volume: Volume) -> Int {
         addLog("write files...")
         
         var totalWriteSize: Int = 0
         var averageWriteTime: Double = 0.0
-        fileCount = 0
+        var fileCount: Int = 0
         repeat {
             let result = writeFile(volume, count: fileCount)
             if( result.time > 0.0) {
@@ -351,32 +397,39 @@ class ViewController: NSViewController, USBDetectorDelegate {
                 inclimentIndicatorValue()
                 totalWriteSize += result.writeSize
                 averageWriteTime = (averageWriteTime + result.time)/2.0
+                setStateText( process: "write files", totalSize: totalWriteSize, time: result.time, count: fileCount)
             } else {
                 break
             }
         } while( isInterrupt == false )
         
-        addLog("total write size: \(totalWriteSize) Bytes")
-        addLog("write time: \(round(averageWriteTime*10)/10) MB/s" )
+        addLog("total write size: \(toStringCanmaFormat(totalWriteSize)) Byte")
+        addLog("write file time: \(round(averageWriteTime*10)/10) MB/s" )
+        
+        return fileCount
     }
     
-    func verifyFile(_ volume: Volume, count: Int) -> (time: TimeInterval, readSize: Int) {
+    func verifyFile(_ volume: Volume, count: Int) -> (time: TimeInterval, verifySize: Int) {
         ramdomGenerator = SeededGenerator(seed: UInt64(count))
         
         // ファイル名を先に作る
-        let fileName = makeFilenameFromRandom(volume: volume)
+        let fileName = makeFilenameFromCount(volume: volume, count: count)
   
         // create compare data
         let compareData = UInt64.random(in: UInt64.min...UInt64.max, using: &ramdomGenerator)
         
-        let fh: FileHandle = FileHandle(forReadingAtPath: fileName)!
-        
         // 開始時間の取得
         let startDate = Date()
-        
-        var readData: Data = fh.readDataToEndOfFile()
-        fh.closeFile()
-        
+
+        var readData: Data
+        do {
+            let url = URL(fileURLWithPath: fileName)
+            readData = try Data(contentsOf: url)
+        } catch {
+            addLog("read file error! \(fileName)")
+            return (0.0, 0)
+        }
+
         var dt = Date().timeIntervalSince(startDate)
         dt = Double(readData.count)/dt/1000/1000
 
@@ -401,7 +454,7 @@ class ViewController: NSViewController, USBDetectorDelegate {
                     || rptr[i+14] != compareData
                     || rptr[i+15] != compareData
                 {
-                    return i*MemoryLayout<UInt64>.size
+                    return readData.count-i*MemoryLayout<UInt64>.size
                 }
                 i += 16
             }
@@ -409,41 +462,50 @@ class ViewController: NSViewController, USBDetectorDelegate {
             return readData.count
         }
         if size < readData.count {
-            
-            readData = Data()
-            return (0.0, size)
+            addLog("verify file error! \(fileName)")
+            readData.removeAll(keepingCapacity: false)
+            return (dt, -size)
         }
         
-        readData = Data()
+        readData.removeAll(keepingCapacity: false)
         return (dt, size)
     }
     
-    func verifyFileAll(_ volume: Volume) {
+    func verifyFileAll(_ volume: Volume, fileCount: Int) {
         addLog("veryfy files...")
         
-        var totalReadSize: Int = 0
+        var totalVerifySize: Int = 0
+        var totalErrorSize: Int = 0
         var averageReadTime: Double = 0.0
         for i in 0..<fileCount {
             if( isInterrupt == true ) {
                 break   // 中止
             }
             let result = verifyFile(volume, count: i)
-            totalReadSize += result.readSize
             inclimentIndicatorValue()
             if result.time <= 0.0 {
-                break   // エラー
+                // 読み込みエラー
             } else {
-                averageReadTime = (averageReadTime + result.time)/2.0
+                if result.verifySize <= 0 {
+                    // 比較エラー
+                    totalErrorSize += -result.verifySize
+                    setStateText( process: "verify error files", totalSize: totalErrorSize, time: result.time, count: i)
+                } else {
+                    totalVerifySize += result.verifySize
+                    setStateText( process: "verify files", totalSize: totalVerifySize, time: result.time, count: i)
+                }
             }
+            averageReadTime = (averageReadTime + result.time)/2.0
         }
-        addLog("total read size: \(totalReadSize) Bytes")
-        addLog("read time: \(round(averageReadTime*10)/10) MB/s" )
+        addLog("total verify success size: \(toStringCanmaFormat(totalVerifySize)) Byte")
+        addLog("total verify failure size: \(toStringCanmaFormat(totalErrorSize)) Byte")
+        addLog("read file time: \(round(averageReadTime*10)/10) MB/s" )
     }
     
     func deleteFile(_ volume: Volume, count: Int) -> String {
         ramdomGenerator = SeededGenerator(seed: UInt64(count))
         
-        let fileName = makeFilenameFromRandom(volume: volume)
+        let fileName = makeFilenameFromCount(volume: volume, count: count)
 
         do {
             try FileManager.default.removeItem(atPath: fileName)
@@ -455,9 +517,9 @@ class ViewController: NSViewController, USBDetectorDelegate {
         return ""
     }
     
-    func deleteFileAll(_ volume: Volume) {
+    func deleteFileAll(_ volume: Volume, fileCount: Int) {
         addLog("delete files...")
-        
+
         for i in 0..<fileCount {
             let result = deleteFile(volume, count: i)
             if result != "" {
