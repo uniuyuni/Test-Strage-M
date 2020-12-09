@@ -119,12 +119,7 @@ class ViewController: NSViewController, USBDetectorDelegate {
             self.data = data
             return true
         }
-        
-        func getFirstSectorNumber() -> UInt64 {
-            let attr = try? FileManager.default.attributesOfItem(atPath: url.path)
-            
-            return 0
-        }
+
     }
     
     var logText: String = ""        // ログテキスト
@@ -228,7 +223,8 @@ class ViewController: NSViewController, USBDetectorDelegate {
         let selectedIndex = volumeList.indexOfSelectedItem
 
         // 存在するファイルの数を数える
-        let fileCount: Int = countWriteFiles(volumeArray[selectedIndex])
+//      let fileCount: Int = countWriteFiles(volumeArray[selectedIndex])
+        let fileCount: Int = Int(ceil(Double(volumeArray[selectedIndex].blocks) / Double(UInt64(MAX_FILE_SIZE)/volumeArray[selectedIndex].blockSize)))
 
         // 見つけたファイルだけ削除
         deleteFileAll(self.volumeArray[selectedIndex], fileCount: fileCount)
@@ -600,8 +596,10 @@ class ViewController: NSViewController, USBDetectorDelegate {
     func deleteFile(_ volume: Volume, count: Int) -> String {
         let file = File(volume.url, makeFilenameFromCount(count))
 
-        if file.delete() == false {
-            return file.fileName
+        if file.exists() == true {
+            if file.delete() == false {
+                return file.fileName
+            }
         }
 
         return ""
